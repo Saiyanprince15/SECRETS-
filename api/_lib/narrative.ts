@@ -16,12 +16,19 @@ export function getGenAiClient(): GoogleGenAI | null {
   return client;
 }
 
+/** Text model — narrative, choices, exhibition copy. */
 export const MODEL = 'gemini-3.6-flash';
 
 /**
- * Stable, permanently-hosted artwork. The previous set used
- * lh3.googleusercontent.com/aida-public/... URLs exported from AI Studio;
- * those are temporary and expire, which is why heroes went blank.
+ * Image model — "Nano Banana". Generates the artwork for each story node.
+ * Set IMAGE_MODEL env var to gemini-3.1-flash-image-preview (Nano Banana 2)
+ * or gemini-3-pro-image-preview (Nano Banana Pro) for higher quality.
+ */
+export const IMAGE_MODEL = process.env.IMAGE_MODEL || 'gemini-2.5-flash-image';
+
+/**
+ * Fallback artwork, used ONLY when image generation fails or no API key is
+ * configured. These are not the primary path — see generateFragmentImage.
  */
 export const FRAGMENT_IMAGES = [
   'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?q=80&w=2400&h=1350&fit=crop&auto=format',
@@ -46,6 +53,57 @@ export function randomDepth() {
   return `Depth ${DEPTHS[Math.floor(Math.random() * DEPTHS.length)]}`;
 }
 
+/**
+ * Generate original artwork for a story node.
+ *
+ * Returns a base64 data URL so the frontend can render it with no storage
+ * layer. That keeps setup to zero, at the cost of a ~1MB payload per node
+ * and images that vanish on refresh. To persist them, upload the buffer to
+ * a Supabase Storage bucket here and return the public URL instead.
+ *
+ * Returns null on any failure — callers fall back to FRAGMENT_IMAGES so a
+ * quota error or safety block never breaks the story flow.
+ */
+export async function generateFragmentImage(
+  title: string,
+  body: string
+): Promise<string | null> {
+  const ai = getGenAiClient();
+  if (!ai) return null;
+
+  const prompt = `Cinematic 16:9 concept artwork for a cosmic mystery art exhibition titled "Secrets".
+
+Scene: ${title}
+${body}
+
+Style: painterly, atmospheric, deep shadow with a single dominant light source.
+Muted palette with one warm accent. Vast negative space, a sense of silence and
+scale. No text, no letters, no watermarks, no people's faces. Fine-art gallery
+piece, not a photograph.`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: IMAGE_MODEL,
+      contents: prompt,
+    });
+
+    const parts = response.candidates?.[0]?.content?.parts ?? [];
+    for (const part of parts) {
+      const inline = (part as any).inlineData;
+      if (inline?.data) {
+        const mime = inline.mimeType || 'image/png';
+        return `data:${mime};base64,${inline.data}`;
+      }
+    }
+
+    console.warn('Image model returned no image part.');
+    return null;
+  } catch (err: any) {
+    console.error('Image generation failed:', err?.message ?? err);
+    return null;
+  }
+}
+
 export interface StoryChoiceBody {
   choiceText?: string;
   currentNarrative?: string;
@@ -67,6 +125,7 @@ export async function generateStoryContinuation(body: StoryChoiceBody) {
         'Return to the Observation Deck',
       ],
       fragmentImage: randomFragment(),
+      imageGenerated: false,
       cycle: randomCycle(),
       depth: randomDepth(),
     };
@@ -110,9 +169,18 @@ Output JSON strictly conforming to this structure:
   });
 
   const data = JSON.parse(response.text || '{}');
+
+  // Artwork is generated FROM the narrative, so this has to run after the
+  // text call rather than in parallel with it.
+  const generated = await generateFragmentImage(
+    data.revelationTitle ?? '',
+    data.revelationBody ?? ''
+  );
+
   return {
     ...data,
-    fragmentImage: randomFragment(),
+    fragmentImage: generated ?? randomFragment(),
+    imageGenerated: generated !== null,
     cycle: randomCycle(),
     depth: randomDepth(),
   };
@@ -128,6 +196,7 @@ export async function generateExhibition(themePrompt?: string) {
       description:
         'Explore the remnants of a silent spacefaring civilization through procedural artifacts and forgotten acoustics.',
       bgImage: randomFragment(),
+      imageGenerated: false,
     };
   }
 
@@ -161,5 +230,15 @@ Output JSON:
   });
 
   const data = JSON.parse(response.text || '{}');
-  return { ...data, bgImage: randomFragment() };
+
+  const generated = await generateFragmentImage(
+    data.title ?? '',
+    data.description ?? ''
+  );
+
+  return {
+    ...data,
+    bgImage: generated ?? randomFragment(),
+    imageGenerated: generated !== null,
+  };
 }
