@@ -187,6 +187,12 @@
   50% { opacity: 1; transform: scale(1.2); filter: drop-shadow(0 0 14px rgba(233,193,118,0.8)); }
 }
 
+/* Monochrome variant used by the light landing page */
+@keyframes star-pulse-ink {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.18); }
+}
+
 .font-cormorant {
   font-family: 'Cormorant Garamond', serif;
 }
@@ -194,4 +200,3 @@
 .font-great-vibes {
   font-family: 'Great Vibes', cursive;
 }
-
