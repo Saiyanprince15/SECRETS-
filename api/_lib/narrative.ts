@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import { InferenceClient } from '@huggingface/inference';
 
 let client: GoogleGenAI | null = null;
 
@@ -16,19 +17,44 @@ export function getGenAiClient(): GoogleGenAI | null {
   return client;
 }
 
-/** Text model — narrative, choices, exhibition copy. */
+/** Text model — narrative, choices, exhibition copy. Gemini has a free tier for text. */
 export const MODEL = 'gemini-3.6-flash';
 
 /**
- * Image model — "Nano Banana". Generates the artwork for each story node.
- * Set IMAGE_MODEL env var to gemini-3.1-flash-image-preview (Nano Banana 2)
- * or gemini-3-pro-image-preview (Nano Banana Pro) for higher quality.
+ * Image generation runs on Hugging Face Inference Providers, not Gemini —
+ * Gemini's image models have no free tier.
+ *
+ * FLUX.1-schnell is a 4-step distilled model, so it's fast and cheap. Note
+ * that HF Inference Providers is free-tier-limited, not unlimited: free
+ * accounts get a monthly credit allowance, after which calls start failing
+ * and we fall back to the stock images below.
  */
-export const IMAGE_MODEL = process.env.IMAGE_MODEL || 'gemini-2.5-flash-image';
+export const IMAGE_MODEL =
+  process.env.IMAGE_MODEL || 'black-forest-labs/FLUX.1-schnell';
 
 /**
- * Fallback artwork, used ONLY when image generation fails or no API key is
- * configured. These are not the primary path — see generateFragmentImage.
+ * Which HF inference provider to route through. "auto" picks the first
+ * available provider for this model and gives a fallback if one is down.
+ * Override with HF_PROVIDER (e.g. "fal-ai", "together", "replicate", "nebius").
+ */
+export const HF_PROVIDER = process.env.HF_PROVIDER || 'auto';
+
+let hfClient: InferenceClient | null = null;
+
+function getHfClient(): InferenceClient | null {
+  if (hfClient) return hfClient;
+  const token = process.env.HF_TOKEN;
+  if (!token) {
+    console.warn('HF_TOKEN is not configured — image generation disabled.');
+    return null;
+  }
+  hfClient = new InferenceClient(token);
+  return hfClient;
+}
+
+/**
+ * Fallback artwork, used ONLY when image generation fails or no token is
+ * configured. Not the primary path — see generateFragmentImage.
  */
 export const FRAGMENT_IMAGES = [
   'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?q=80&w=2400&h=1350&fit=crop&auto=format',
@@ -54,50 +80,47 @@ export function randomDepth() {
 }
 
 /**
- * Generate original artwork for a story node.
+ * Generate original artwork for a story node via FLUX.1-schnell on HF.
  *
- * Returns a base64 data URL so the frontend can render it with no storage
- * layer. That keeps setup to zero, at the cost of a ~1MB payload per node
- * and images that vanish on refresh. To persist them, upload the buffer to
- * a Supabase Storage bucket here and return the public URL instead.
- *
- * Returns null on any failure — callers fall back to FRAGMENT_IMAGES so a
- * quota error or safety block never breaks the story flow.
+ * Returns a base64 data URL. Returns null on any failure so callers can fall
+ * back to FRAGMENT_IMAGES — a rate limit or cold provider never breaks the
+ * story flow.
  */
 export async function generateFragmentImage(
   title: string,
   body: string
 ): Promise<string | null> {
-  const ai = getGenAiClient();
-  if (!ai) return null;
+  const hf = getHfClient();
+  if (!hf) return null;
 
-  const prompt = `Cinematic 16:9 concept artwork for a cosmic mystery art exhibition titled "Secrets".
-
-Scene: ${title}
-${body}
-
-Style: painterly, atmospheric, deep shadow with a single dominant light source.
-Muted palette with one warm accent. Vast negative space, a sense of silence and
-scale. No text, no letters, no watermarks, no people's faces. Fine-art gallery
-piece, not a photograph.`;
+  const prompt = `Cinematic concept artwork for a cosmic mystery art exhibition. Scene: ${title}. ${body} Painterly and atmospheric, deep shadow with a single dominant light source, muted palette with one warm accent, vast negative space, a sense of silence and scale. Fine-art gallery piece, not a photograph. No text, no letters, no watermarks, no faces.`;
 
   try {
-    const response = await ai.models.generateContent({
+    const blob = await hf.textToImage({
+      provider: HF_PROVIDER as any,
       model: IMAGE_MODEL,
-      contents: prompt,
+      inputs: prompt,
+      parameters: {
+        // schnell is distilled for 4 steps with no guidance — going higher
+        // is slower with no quality gain.
+        num_inference_steps: 4,
+        guidance_scale: 0,
+        // 16:9, both dimensions divisible by 16 as FLUX expects.
+        width: 1024,
+        height: 576,
+      },
     });
 
-    const parts = response.candidates?.[0]?.content?.parts ?? [];
-    for (const part of parts) {
-      const inline = (part as any).inlineData;
-      if (inline?.data) {
-        const mime = inline.mimeType || 'image/png';
-        return `data:${mime};base64,${inline.data}`;
-      }
+    const arrayBuffer = await (blob as unknown as Blob).arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    const mime = (blob as unknown as Blob).type || 'image/png';
+
+    if (!base64) {
+      console.warn('HF returned an empty image payload.');
+      return null;
     }
 
-    console.warn('Image model returned no image part.');
-    return null;
+    return `data:${mime};base64,${base64}`;
   } catch (err: any) {
     console.error('Image generation failed:', err?.message ?? err);
     return null;
@@ -115,6 +138,10 @@ export async function generateStoryContinuation(body: StoryChoiceBody) {
   const ai = getGenAiClient();
 
   if (!ai) {
+    const fallbackImage = await generateFragmentImage(
+      'The Celestial Anomaly',
+      'Ancient controls hum with a deep resonant frequency on an abandoned bridge.'
+    );
     return {
       revelationTitle: 'The Celestial Anomaly',
       revelationBody: `As you chose to "${choiceText}", the ancient controls hum with a deep resonant frequency. A hidden hologram illuminates the dark bridge, revealing forgotten stellar cartography from the Lost Era.`,
@@ -124,8 +151,8 @@ export async function generateStoryContinuation(body: StoryChoiceBody) {
         'Activate the Sub-light Thrusters',
         'Return to the Observation Deck',
       ],
-      fragmentImage: randomFragment(),
-      imageGenerated: false,
+      fragmentImage: fallbackImage ?? randomFragment(),
+      imageGenerated: fallbackImage !== null,
       cycle: randomCycle(),
       depth: randomDepth(),
     };
@@ -170,8 +197,7 @@ Output JSON strictly conforming to this structure:
 
   const data = JSON.parse(response.text || '{}');
 
-  // Artwork is generated FROM the narrative, so this has to run after the
-  // text call rather than in parallel with it.
+  // Artwork is generated FROM the narrative, so this runs after the text call.
   const generated = await generateFragmentImage(
     data.revelationTitle ?? '',
     data.revelationBody ?? ''
@@ -190,13 +216,17 @@ export async function generateExhibition(themePrompt?: string) {
   const ai = getGenAiClient();
 
   if (!ai) {
+    const fallbackImage = await generateFragmentImage(
+      'Season V: Crimson Echoes',
+      'A meditation on memory and lost constellations.'
+    );
     return {
       title: 'Season V: Crimson Echoes',
       tagline: 'A meditation on memory and lost constellations.',
       description:
         'Explore the remnants of a silent spacefaring civilization through procedural artifacts and forgotten acoustics.',
-      bgImage: randomFragment(),
-      imageGenerated: false,
+      bgImage: fallbackImage ?? randomFragment(),
+      imageGenerated: fallbackImage !== null,
     };
   }
 
