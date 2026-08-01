@@ -1,16 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { FallingPetals } from './FallingPetals';
+import { audioEngine } from '../lib/audioEngine';
 
 interface LandingScreenProps {
   onBegin: () => void;
   onLoginClick: () => void;
 }
 
-/**
- * The title lockup is used exactly as supplied - no recolouring, no trimming,
- * no background removal. The page background is set to #D9D9D9 to match the
- * image's own backing colour so the artwork sits flush against it.
- */
 const PLATE = '#D9D9D9';
 
 export const LandingScreen: React.FC<LandingScreenProps> = ({
@@ -24,6 +20,32 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
     return () => clearTimeout(timeout);
   }, []);
 
+  /**
+   * Browsers block AudioContext until the first user gesture (click/tap/key).
+   * We attach a one-shot listener to the whole page so the soundscape kicks in
+   * the instant the user interacts — before they even reach "Begin Exploring".
+   */
+  useEffect(() => {
+    const startAudio = () => {
+      if (!audioEngine.getIsPlaying()) {
+        audioEngine.play();
+      }
+      window.removeEventListener('click', startAudio);
+      window.removeEventListener('touchstart', startAudio);
+      window.removeEventListener('keydown', startAudio);
+    };
+
+    window.addEventListener('click', startAudio, { once: true });
+    window.addEventListener('touchstart', startAudio, { once: true });
+    window.addEventListener('keydown', startAudio, { once: true });
+
+    return () => {
+      window.removeEventListener('click', startAudio);
+      window.removeEventListener('touchstart', startAudio);
+      window.removeEventListener('keydown', startAudio);
+    };
+  }, []);
+
   return (
     <div
       className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden"
@@ -32,9 +54,8 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
       <FallingPetals petalCount={55} tone="ink" />
 
       <div className="relative z-10 flex flex-col items-center text-center px-6">
-        {/* Original artwork, unmodified. Aspect ratio preserved via h-auto. */}
         <img
-          src="/landing-title.png"
+          src="/Component_1.png"
           alt="Secrets"
           width={720}
           height={400}
