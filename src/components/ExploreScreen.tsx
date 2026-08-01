@@ -1,29 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { StoryNode } from '../types';
 import { CosmicDust } from './CosmicDust';
+import { CHAPTERS, Chapter, FALLBACK_HERO } from '../chapters';
 
 interface ExploreScreenProps {
   storyNode: StoryNode;
   onSelectChoice: (choiceText: string) => void;
+  onSelectChapter: (chapter: Chapter) => void;
   isLoading?: boolean;
 }
 
 export const ExploreScreen: React.FC<ExploreScreenProps> = ({
   storyNode,
   onSelectChoice,
+  onSelectChapter,
   isLoading = false,
 }) => {
   const [customPrompt, setCustomPrompt] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [exploreView, setExploreView] = useState<'chapters' | 'story'>('chapters');
+  const [heroSrc, setHeroSrc] = useState(storyNode.imageUrl);
 
-  // Mouse parallax effect for hero image
+  // Keep the hero in sync when the story node changes, and recover from
+  // broken/expired image URLs instead of showing a blank frame.
+  useEffect(() => {
+    setHeroSrc(storyNode.imageUrl || FALLBACK_HERO);
+  }, [storyNode.imageUrl]);
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      const x = (e.clientX / window.innerWidth - 0.5) * 12;
-      const y = (e.clientY / window.innerHeight - 0.5) * 12;
-      setMousePos({ x, y });
+      setMousePos({
+        x: (e.clientX / window.innerWidth - 0.5) * 12,
+        y: (e.clientY / window.innerHeight - 0.5) * 12,
+      });
     };
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
@@ -53,30 +63,37 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {/* Season 1 Cosmos Chapter Card */}
-            <div 
-              onClick={() => setExploreView('story')}
-              className="group relative h-[400px] border border-white/10 rounded-xl overflow-hidden cursor-pointer hover:border-[#FF4E00]/50 transition-all duration-500"
-            >
-              <img 
-                src="https://images.unsplash.com/photo-1462331940025-496dfbfc7564?q=80&w=2000&auto=format&fit=crop" 
-                alt="Season 1 Cosmos"
-                className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-80 group-hover:scale-105 transition-all duration-1000"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0D0D0D] via-[#0D0D0D]/40 to-transparent" />
-              
-              <div className="absolute inset-x-0 bottom-0 p-8 flex flex-col justify-end">
-                <span className="text-[10px] font-mono text-[#FF4E00] uppercase tracking-[0.3em] mb-3 opacity-80">
-                  Chapter I
-                </span>
-                <h2 className="font-serif text-2xl md:text-3xl text-[#E0D8D0] mb-2 group-hover:text-[#FF4E00] transition-colors">
-                  Season 1 Cosmos
-                </h2>
-                <p className="font-sans text-xs text-[#E0D8D0]/70 leading-relaxed">
-                  Enter the primordial void and discover the resonant frequencies of the early universe.
-                </p>
-              </div>
-            </div>
+            {CHAPTERS.map((chapter) => (
+              <button
+                key={chapter.id}
+                type="button"
+                onClick={() => {
+                  onSelectChapter(chapter);
+                  setExploreView('story');
+                }}
+                className="group relative h-[400px] w-full text-left border border-white/10 rounded-xl overflow-hidden cursor-pointer hover:border-[#FF4E00]/50 transition-all duration-500"
+              >
+                <img
+                  src={chapter.cardImage}
+                  alt={chapter.title}
+                  loading="lazy"
+                  className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-80 group-hover:scale-105 transition-all duration-1000"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0D0D0D] via-[#0D0D0D]/40 to-transparent" />
+
+                <div className="absolute inset-x-0 bottom-0 p-8 flex flex-col justify-end">
+                  <span className="text-[10px] font-mono text-[#FF4E00] uppercase tracking-[0.3em] mb-3 opacity-80">
+                    {chapter.label}
+                  </span>
+                  <h2 className="font-serif text-2xl md:text-3xl text-[#E0D8D0] mb-2 group-hover:text-[#FF4E00] transition-colors">
+                    {chapter.title}
+                  </h2>
+                  <p className="font-sans text-xs text-[#E0D8D0]/70 leading-relaxed">
+                    {chapter.blurb}
+                  </p>
+                </div>
+              </button>
+            ))}
           </div>
         </div>
       </main>
@@ -85,33 +102,44 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
 
   return (
     <main className="flex-grow relative pt-20 overflow-hidden">
-      {/* Floating Cosmic Dust Particle Background */}
       <CosmicDust particleCount={70} />
 
-      {/* Hero Artwork (75vh) */}
-      <section className="relative w-full h-[75vh] overflow-hidden bg-[#0e0e0e]">
-        {/* The Artwork */}
-        <img
-          src={storyNode.imageUrl}
-          alt={storyNode.title}
-          className="w-full h-full object-cover opacity-90 transition-transform duration-700 ease-out animate-slow-pan"
-          style={{
-            transform: `scale(1.08) translate(${-mousePos.x}px, ${-mousePos.y}px)`,
-          }}
-        />
-        {/* Atmospheric Layering Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#131313] via-[#131313]/20 to-transparent pointer-events-none" />
+      {/* Hero artwork: fixed 16:9, wide, story flows beneath it */}
+      <section className="relative w-full px-4 md:px-12 pt-6">
+        <div className="relative w-full max-w-[1600px] mx-auto aspect-[16/9] overflow-hidden rounded-2xl bg-[#0e0e0e] border border-white/10">
+          <img
+            key={heroSrc}
+            src={heroSrc}
+            alt={storyNode.title}
+            onError={() => {
+              if (heroSrc !== FALLBACK_HERO) setHeroSrc(FALLBACK_HERO);
+            }}
+            className="w-full h-full object-cover opacity-90 transition-transform duration-700 ease-out animate-slow-pan"
+            style={{
+              transform: `scale(1.06) translate(${-mousePos.x}px, ${-mousePos.y}px)`,
+            }}
+          />
 
-        {/* Floating Metadata Pill */}
-        <div className="absolute top-8 left-8 md:left-20 bg-[#0D0D0D]/80 backdrop-blur-md border border-[#FF4E00]/40 px-5 py-2 rounded-full text-[10px] uppercase tracking-[0.3em] font-semibold text-[#FF4E00] flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#FF4E00] animate-pulse" />
-          {storyNode.cycle} • {storyNode.depth}
+          {/* Light bottom fade only - no longer swallowing the frame */}
+          <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#131313]/70 to-transparent pointer-events-none" />
+
+          <div className="absolute top-6 left-6 md:top-8 md:left-8 bg-[#0D0D0D]/80 backdrop-blur-md border border-[#FF4E00]/40 px-5 py-2 rounded-full text-[10px] uppercase tracking-[0.3em] font-semibold text-[#FF4E00] flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#FF4E00] animate-pulse" />
+            {storyNode.cycle} • {storyNode.depth}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setExploreView('chapters')}
+            className="absolute top-6 right-6 md:top-8 md:right-8 bg-[#0D0D0D]/80 backdrop-blur-md border border-white/15 px-4 py-2 rounded-full text-[10px] uppercase tracking-[0.25em] text-[#E0D8D0]/80 hover:text-[#FF4E00] hover:border-[#FF4E00]/40 transition-colors cursor-pointer"
+          >
+            ← Archives
+          </button>
         </div>
       </section>
 
-      {/* Narrative & Choices Section */}
-      <section className="px-6 md:px-20 py-16 md:py-24 relative z-10 -mt-24 md:-mt-40 fade-in-rise delay-300">
-        {/* Narrative Text */}
+      {/* Narrative continues below the image */}
+      <section className="px-6 md:px-20 py-16 md:py-20 relative z-10 fade-in-rise delay-300">
         <div className="max-w-4xl mx-auto text-center mb-20 md:mb-24">
           <h2 className="font-serif text-3xl md:text-5xl text-[#E0D8D0] italic font-normal leading-relaxed text-balance opacity-95 mb-6">
             "{storyNode.title}"
@@ -120,17 +148,15 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
             {storyNode.text}
           </p>
 
-          {/* Vertical line and glowing accent ornament */}
           <div className="w-px h-16 bg-[#FF4E00]/40 mx-auto mt-12 mb-4" />
           <div className="w-1.5 h-1.5 bg-[#FF4E00] rounded-full mx-auto shadow-[0_0_12px_rgba(255,78,0,0.9)]" />
         </div>
 
-        {/* Choices (Editorial Label Style) */}
         <div className="max-w-7xl mx-auto pb-24">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-12">
             {storyNode.choices.map((choice, idx) => (
               <button
-                key={idx}
+                key={`${choice}-${idx}`}
                 disabled={isLoading}
                 onClick={() => onSelectChoice(choice)}
                 className="group relative p-8 h-36 md:h-44 border border-white/10 hover:border-[#FF4E00] transition-all duration-500 flex flex-col justify-between text-left overflow-hidden bg-[#161920]/70 backdrop-blur-md cursor-pointer disabled:opacity-50 rounded-xl"
@@ -147,7 +173,6 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
             ))}
           </div>
 
-          {/* Custom Action / Prompt toggle */}
           <div className="text-center pt-4">
             {!showCustomInput ? (
               <button
@@ -158,7 +183,10 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
                 ✦ Speak a custom intention to the soundscape...
               </button>
             ) : (
-              <form onSubmit={handleCustomSubmit} className="max-w-xl mx-auto flex gap-3 mt-4">
+              <form
+                onSubmit={handleCustomSubmit}
+                className="max-w-xl mx-auto flex gap-3 mt-4"
+              >
                 <input
                   type="text"
                   value={customPrompt}

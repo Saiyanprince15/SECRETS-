@@ -1,6 +1,20 @@
 import { useState, useEffect } from 'react';
-import { AppTab, UserProfile, StoryNode, HistoryItem, SavedDiscovery, SeasonExhibition } from './types';
-import { INITIAL_STORY, INITIAL_HISTORY, INITIAL_SAVED_DISCOVERIES, INITIAL_SEASONS } from './data';
+import {
+  AppTab,
+  UserProfile,
+  StoryNode,
+  HistoryItem,
+  SavedDiscovery,
+  SeasonExhibition,
+} from './types';
+import {
+  INITIAL_STORY,
+  INITIAL_HISTORY,
+  INITIAL_SAVED_DISCOVERIES,
+  INITIAL_SEASONS,
+} from './data';
+import { Chapter } from './chapters';
+import { supabase, ensureProfile } from './lib/supabase';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { AuthScreen } from './components/AuthScreen';
@@ -16,43 +30,86 @@ export function App() {
   const [currentTab, setCurrentTab] = useState<AppTab>('landing');
   const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
   const [lastChoice, setLastChoice] = useState<string>('');
-  
-  // User Profile
+
   const [profile, setProfile] = useState<UserProfile>({
-    email: 'wanderer@secrets.art',
+    email: '',
     loggedIn: false,
     explorerName: 'The Wanderer',
-    level: 'LVL VII / SEASON OF ROSES',
+    level: 'LVL I / SEASON OF ROSES',
     currentSeason: 'Season of Roses',
   });
 
-  // Narrative & Exhibition Data
   const [storyNode, setStoryNode] = useState<StoryNode>(INITIAL_STORY);
   const [history, setHistory] = useState<HistoryItem[]>(INITIAL_HISTORY);
-  const [savedDiscoveries, setSavedDiscoveries] = useState<SavedDiscovery[]>(INITIAL_SAVED_DISCOVERIES);
+  const [savedDiscoveries, setSavedDiscoveries] = useState<SavedDiscovery[]>(
+    INITIAL_SAVED_DISCOVERIES
+  );
   const [seasons, setSeasons] = useState<SeasonExhibition[]>(INITIAL_SEASONS);
+  const [selectedDiscovery, setSelectedDiscovery] =
+    useState<SavedDiscovery | null>(null);
 
-  // Soundscape transition on storyNode update
+  // Supabase session: restore on mount, then track changes
   useEffect(() => {
-    audioEngine.transitionForStoryNode(storyNode.title, storyNode.text, storyNode.depth);
-  }, [storyNode]);
-  
-  // Modal state
-  const [selectedDiscovery, setSelectedDiscovery] = useState<SavedDiscovery | null>(null);
+    const applyUser = (user: { id: string; email?: string }) => {
+      ensureProfile(user.id, user.email ?? '');
+      setProfile((prev) => ({
+        ...prev,
+        email: user.email ?? prev.email,
+        loggedIn: true,
+        explorerName: user.email?.split('@')[0] || 'The Wanderer',
+      }));
+    };
 
-  // Handle Login
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        applyUser(session.user);
+        setCurrentTab((tab) => (tab === 'landing' ? 'explore' : tab));
+      }
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        applyUser(session.user);
+      } else {
+        setProfile((prev) => ({ ...prev, loggedIn: false, email: '' }));
+        setCurrentTab('landing');
+      }
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    audioEngine.transitionForStoryNode(
+      storyNode.title,
+      storyNode.text,
+      storyNode.depth
+    );
+  }, [storyNode]);
+
   const handleLogin = (userEmail: string) => {
-    setProfile(prev => ({
+    setProfile((prev) => ({
       ...prev,
       email: userEmail,
       loggedIn: true,
       explorerName: userEmail.split('@')[0] || 'The Wanderer',
     }));
-    setLastChoice("Entry Key Authenticated");
+    setLastChoice('Entry Key Authenticated');
     setIsTransitioning(true);
   };
 
-  // Handle Story Choice / Intention
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setCurrentTab('landing');
+  };
+
+  /** Selecting a chapter must set the story node, or the hero image
+   *  stays on whatever the previous node was. */
+  const handleSelectChapter = (chapter: Chapter) => {
+    setStoryNode(chapter.story);
+    setLastChoice(`Entering ${chapter.title}`);
+  };
+
   const handleSelectChoice = async (choiceText: string) => {
     setLastChoice(choiceText);
     setIsTransitioning(true);
@@ -64,115 +121,111 @@ export function App() {
         body: JSON.stringify({
           choiceText,
           currentNarrative: storyNode.text,
-          history: history.map(h => ({ title: h.title, choice: h.description }))
-        })
+          history: history.map((h) => ({
+            title: h.title,
+            choice: h.description,
+          })),
+        }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        const newStoryNode: StoryNode = {
-          title: data.revelationTitle || "The Cosmic Revelation",
-          text: data.revelationBody || "As you proceeded, ancient holographic glyphs materialized in the surrounding quiet.",
-          imageUrl: data.fragmentImage || storyNode.imageUrl,
-          choices: data.nextChoices || INITIAL_STORY.choices,
-          cycle: data.cycle || "Cycle 45",
-          depth: data.depth || "Depth VII"
-        };
+      if (!res.ok) throw new Error(`Story API returned ${res.status}`);
 
-        setStoryNode(newStoryNode);
+      const data = await res.json();
+      const newStoryNode: StoryNode = {
+        title: data.revelationTitle || 'The Cosmic Revelation',
+        text:
+          data.revelationBody ||
+          'As you proceeded, ancient holographic glyphs materialized in the surrounding quiet.',
+        imageUrl: data.fragmentImage || storyNode.imageUrl,
+        choices: data.nextChoices || INITIAL_STORY.choices,
+        cycle: data.cycle || 'Cycle 45',
+        depth: data.depth || 'Depth VII',
+      };
 
-        // Add to history
-        const newHistoryItem: HistoryItem = {
-          id: `h-${Date.now()}`,
-          title: data.revelationTitle || choiceText,
-          cycle: data.cycle || "Cycle 45",
-          depth: data.depth || "Depth VII",
-          description: data.revelationBody || `Resonated with intention: "${choiceText}"`,
-          imageUrl: data.fragmentImage || storyNode.imageUrl,
-          date: new Date().toISOString().split('T')[0]
-        };
+      setStoryNode(newStoryNode);
 
-        setHistory(prev => [newHistoryItem, ...prev]);
+      const stamp = Date.now();
+      const entry = {
+        title: newStoryNode.title,
+        cycle: newStoryNode.cycle,
+        depth: newStoryNode.depth,
+        description: newStoryNode.text,
+        imageUrl: newStoryNode.imageUrl,
+      };
 
-        // Automatically add to saved discoveries
-        const newDiscovery: SavedDiscovery = {
-          id: `s-${Date.now()}`,
-          title: data.revelationTitle || choiceText,
-          cycle: data.cycle || "Cycle 45",
-          depth: data.depth || "Depth VII",
-          description: data.revelationBody,
-          imageUrl: data.fragmentImage || storyNode.imageUrl,
-          bookmarked: true
-        };
-
-        setSavedDiscoveries(prev => [newDiscovery, ...prev]);
-      }
+      setHistory((prev) => [
+        { id: `h-${stamp}`, ...entry, date: new Date().toISOString().split('T')[0] },
+        ...prev,
+      ]);
+      setSavedDiscoveries((prev) => [
+        { id: `s-${stamp}`, ...entry, bookmarked: true },
+        ...prev,
+      ]);
     } catch (err) {
-      console.error("Failed to process story choice:", err);
+      console.error('Failed to process story choice:', err);
     }
   };
 
-  // Complete Transition
   const handleFinishTransition = () => {
     setIsTransitioning(false);
-    if (currentTab === 'auth') {
-      setCurrentTab('explore');
-    }
-    // Play harmonic chime when unlocking & revealing new story node
+    if (currentTab === 'auth') setCurrentTab('explore');
     audioEngine.playUnlockChime();
   };
 
-  // Bookmark Toggle
   const handleToggleBookmark = (id: string) => {
-    setSavedDiscoveries(prev =>
-      prev.map(item => item.id === id ? { ...item, bookmarked: !item.bookmarked } : item)
+    setSavedDiscoveries((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, bookmarked: !item.bookmarked } : item
+      )
     );
   };
 
-  // Generate Custom Exhibition
-  const handleGenerateCustomExhibition = async (themePrompt: string): Promise<SeasonExhibition | null> => {
+  const handleGenerateCustomExhibition = async (
+    themePrompt: string
+  ): Promise<SeasonExhibition | null> => {
     try {
       const res = await fetch('/api/exhibitions/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ themePrompt })
+        body: JSON.stringify({ themePrompt }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        const newSeason: SeasonExhibition = {
-          id: `season-custom-${Date.now()}`,
-          title: data.title || `Season: ${themePrompt}`,
-          subtitle: data.tagline || "Custom AI Curation",
-          description: data.description || "Synthesized from your cosmic prompt.",
-          status: 'active',
-          bgImage: data.bgImage || "https://images.unsplash.com/photo-1518621736915-f3b1c41bfd00?q=80&w=2000&auto=format&fit=crop",
-          isLocked: false
-        };
+      if (!res.ok) throw new Error(`Exhibition API returned ${res.status}`);
 
-        setSeasons(prev => [newSeason, ...prev]);
-        return newSeason;
-      }
+      const data = await res.json();
+      const newSeason: SeasonExhibition = {
+        id: `season-custom-${Date.now()}`,
+        title: data.title || `Season: ${themePrompt}`,
+        subtitle: data.tagline || 'Custom AI Curation',
+        description: data.description || 'Synthesized from your cosmic prompt.',
+        status: 'active',
+        bgImage:
+          data.bgImage ||
+          'https://images.unsplash.com/photo-1518621736915-f3b1c41bfd00?q=80&w=2400&h=1350&fit=crop&auto=format',
+        isLocked: false,
+      };
+
+      setSeasons((prev) => [newSeason, ...prev]);
+      return newSeason;
     } catch (err) {
-      console.error("Failed to generate custom exhibition:", err);
+      console.error('Failed to generate custom exhibition:', err);
+      return null;
     }
-    return null;
   };
 
-  // Select Season to view
   const handleSelectSeason = (season: SeasonExhibition) => {
     setStoryNode({
       title: season.title,
       text: `${season.description} You step through the threshold of ${season.title}.`,
       imageUrl: season.bgImage,
       choices: [
-        "Inspect Exhibition Monolith",
-        "Observe Shifting Light Geometry",
-        "Listen to Ambient Resonances",
-        "Record Discovery in Journal"
+        'Inspect Exhibition Monolith',
+        'Observe Shifting Light Geometry',
+        'Listen to Ambient Resonances',
+        'Record Discovery in Journal',
       ],
-      cycle: "Cycle 50",
-      depth: "Depth IX"
+      cycle: 'Cycle 50',
+      depth: 'Depth IX',
     });
     setLastChoice(`Entering ${season.title}`);
     setIsTransitioning(true);
@@ -181,15 +234,14 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-[#131313] text-[#e5e2e1] flex flex-col font-sans selection:bg-[#FF4E00]/30 selection:text-[#FF4E00] relative overflow-x-hidden">
-      {/* Universal Top Navigation */}
       {currentTab !== 'landing' && (
         <Navbar
           currentTab={currentTab}
           onSelectTab={(tab) => setCurrentTab(tab)}
+          onSignOut={profile.loggedIn ? handleSignOut : undefined}
         />
       )}
 
-      {/* Main View Router */}
       {isTransitioning ? (
         <TransitionScreen
           chosenAction={lastChoice}
@@ -206,6 +258,7 @@ export function App() {
         <ExploreScreen
           storyNode={storyNode}
           onSelectChoice={handleSelectChoice}
+          onSelectChapter={handleSelectChapter}
         />
       ) : currentTab === 'seasons' ? (
         <SeasonsScreen
@@ -223,12 +276,10 @@ export function App() {
         />
       )}
 
-      {/* Footer */}
       {currentTab !== 'landing' && currentTab !== 'auth' && !isTransitioning && (
         <Footer currentSeason={profile.currentSeason} />
       )}
 
-      {/* Modal Viewer */}
       <SecretModal
         discovery={selectedDiscovery}
         onClose={() => setSelectedDiscovery(null)}

@@ -6,20 +6,25 @@ interface NavbarProps {
   currentTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
   onOpenSearch?: () => void;
+  onSignOut?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab, onOpenSearch }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  currentTab,
+  onSelectTab,
+  onOpenSearch,
+  onSignOut,
+}) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   if (currentTab === 'auth') {
-    return null; // Don't render top navbar on full auth screen
+    return null;
   }
 
   return (
     <nav className="bg-transparent flex justify-between items-center w-full px-6 md:px-12 lg:px-20 py-4 md:py-6 z-50 fixed top-0 backdrop-blur-md bg-[#0D0D0D]/70 border-b border-white/10">
-      {/* Brand */}
       <div className="flex items-center gap-6">
-        <button 
+        <button
           onClick={() => onSelectTab('explore')}
           className="font-serif text-2xl md:text-3xl text-[#E0D8D0] tracking-[0.2em] uppercase text-left cursor-pointer hover:text-[#FF4E00] transition-colors"
         >
@@ -31,53 +36,28 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab, onOpenS
         </span>
       </div>
 
-      {/* Navigation Links (Desktop) */}
       <ul className="hidden md:flex gap-10 text-xs uppercase tracking-[0.25em] font-semibold text-[#a0a0a0]">
-        <li>
-          <button
-            onClick={() => onSelectTab('explore')}
-            className={`transition-all duration-300 pb-1 cursor-pointer block ${
-              currentTab === 'explore'
-                ? 'text-[#FF4E00] border-b-2 border-[#FF4E00] scale-105'
-                : 'text-[#E0D8D0]/70 hover:text-[#FF4E00]'
-            }`}
-          >
-            Explore
-          </button>
-        </li>
-        <li>
-          <button
-            onClick={() => onSelectTab('seasons')}
-            className={`transition-all duration-300 pb-1 cursor-pointer block ${
-              currentTab === 'seasons'
-                ? 'text-[#FF4E00] border-b-2 border-[#FF4E00] scale-105'
-                : 'text-[#E0D8D0]/70 hover:text-[#FF4E00]'
-            }`}
-          >
-            Seasons
-          </button>
-        </li>
-        <li>
-          <button
-            onClick={() => onSelectTab('profile')}
-            className={`transition-all duration-300 pb-1 cursor-pointer block ${
-              currentTab === 'profile'
-                ? 'text-[#FF4E00] border-b-2 border-[#FF4E00] scale-105'
-                : 'text-[#E0D8D0]/70 hover:text-[#FF4E00]'
-            }`}
-          >
-            Profile
-          </button>
-        </li>
+        {(['explore', 'seasons', 'profile'] as const).map((tab) => (
+          <li key={tab}>
+            <button
+              onClick={() => onSelectTab(tab)}
+              className={`transition-all duration-300 pb-1 cursor-pointer block capitalize ${
+                currentTab === tab
+                  ? 'text-[#FF4E00] border-b-2 border-[#FF4E00] scale-105'
+                  : 'text-[#E0D8D0]/70 hover:text-[#FF4E00]'
+              }`}
+            >
+              {tab}
+            </button>
+          </li>
+        ))}
       </ul>
 
-      {/* Trailing Actions: Soundscape Control & Search */}
       <div className="flex items-center space-x-3 sm:space-x-4">
-        {/* Ambient Soundscape Controller */}
         <AmbientSoundscapeControl />
 
         {onOpenSearch && (
-          <button 
+          <button
             onClick={onOpenSearch}
             aria-label="Search"
             className="text-[#a0a0a0] hover:text-[#FF4E00] transition-colors p-1 cursor-pointer"
@@ -85,7 +65,16 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab, onOpenS
             <span className="material-symbols-outlined text-xl">search</span>
           </button>
         )}
-        
+
+        {onSignOut && (
+          <button
+            onClick={onSignOut}
+            className="hidden md:inline-block text-[10px] uppercase tracking-[0.25em] text-[#E0D8D0]/50 hover:text-[#FF4E00] transition-colors cursor-pointer border-b border-transparent hover:border-[#FF4E00]/40 pb-0.5"
+          >
+            Sign Out
+          </button>
+        )}
+
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           aria-label="Toggle Menu"
@@ -97,50 +86,32 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab, onOpenS
         </button>
       </div>
 
-      {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div className="absolute top-full left-0 w-full bg-[#131313]/95 backdrop-blur-xl border-b border-white/10 p-6 flex flex-col space-y-4 md:hidden z-50 animate-fadeInUp">
+          {(['explore', 'seasons', 'profile'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => {
+                onSelectTab(tab);
+                setMobileMenuOpen(false);
+              }}
+              className={`text-left text-sm uppercase tracking-widest py-2 capitalize ${
+                currentTab === tab ? 'text-[#e9c176]' : 'text-[#e5e2e1]/70'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+
           <button
             onClick={() => {
-              onSelectTab('explore');
               setMobileMenuOpen(false);
-            }}
-            className={`text-left text-sm uppercase tracking-widest py-2 ${
-              currentTab === 'explore' ? 'text-[#e9c176]' : 'text-[#e5e2e1]/70'
-            }`}
-          >
-            Explore
-          </button>
-          <button
-            onClick={() => {
-              onSelectTab('seasons');
-              setMobileMenuOpen(false);
-            }}
-            className={`text-left text-sm uppercase tracking-widest py-2 ${
-              currentTab === 'seasons' ? 'text-[#e9c176]' : 'text-[#e5e2e1]/70'
-            }`}
-          >
-            Seasons
-          </button>
-          <button
-            onClick={() => {
-              onSelectTab('profile');
-              setMobileMenuOpen(false);
-            }}
-            className={`text-left text-sm uppercase tracking-widest py-2 ${
-              currentTab === 'profile' ? 'text-[#e9c176]' : 'text-[#e5e2e1]/70'
-            }`}
-          >
-            Profile
-          </button>
-          <button
-            onClick={() => {
-              onSelectTab('auth');
-              setMobileMenuOpen(false);
+              if (onSignOut) onSignOut();
+              else onSelectTab('auth');
             }}
             className="text-left text-xs uppercase tracking-widest text-[#d1c5b4]/50 hover:text-[#e9c176] pt-4 border-t border-white/10"
           >
-            Sign Out / Reset Access
+            {onSignOut ? 'Sign Out' : 'Enter With A Key'}
           </button>
         </div>
       )}
