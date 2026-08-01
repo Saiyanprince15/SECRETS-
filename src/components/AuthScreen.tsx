@@ -77,14 +77,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
       className="min-h-screen relative flex flex-col items-center justify-center overflow-hidden"
       style={{ backgroundColor: '#D9D9D9' }}
     >
-      {/* ── Background plate — matches the image's own grey exactly ── */}
-      <div className="absolute inset-0 z-0" style={{ backgroundColor: '#D9D9D9' }} />
-
-      {/* ── Title artwork — untouched, z-[1] so petals fly in front ── */}
-      <div className="absolute inset-0 z-[1] flex items-center justify-center pointer-events-none">
+      {/* Title artwork at z-[1] so petals fly in front of it */}
+      <div className="absolute inset-0 z-[1] flex items-start justify-center pt-[8vh] pointer-events-none">
         <img
-          src="/Component_1.png"
-          alt="Secrets — A Never Ending Art"
+          src="/landing-title.png"
+          alt="Secrets"
           width={720}
           height={400}
           className="w-[min(92vw,720px)] h-auto select-none"
@@ -92,16 +89,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
         />
       </div>
 
-      {/* ── Petals in front of the image ── */}
+      {/* Petals in front of the image */}
       <div className="absolute inset-0 z-[3] pointer-events-none">
         <FallingPetals petalCount={55} tone="ink" />
       </div>
 
-      {/* ── Form sits above petals ── */}
+      {/* Form above petals */}
       <div className="relative z-[4] w-full flex flex-col items-center justify-end min-h-screen pb-16 px-6">
         <div className="w-full max-w-sm mx-auto">
 
-          {/* Tab switcher */}
           <div className="grid grid-cols-2 gap-4 mb-8 border-b border-black/15 pb-4">
             {(['signin', 'signup'] as const).map((tab) => (
               <button
@@ -195,7 +191,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                     ? 'Begin'
                     : 'Initiate Registration'}
                 </span>
-                {/* shimmer */}
                 <div
                   className="absolute top-0 left-[-100%] w-[60%] h-full skew-x-[-20deg] group-hover:left-[140%] transition-all duration-[1200ms] ease-out pointer-events-none"
                   style={{ background: 'linear-gradient(90deg, transparent, rgba(0,0,0,0.06), transparent)' }}
@@ -206,7 +201,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
         </div>
       </div>
 
-      {/* ── Forgot key modal ── */}
       {forgotKeyModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-sm p-6">
           <div className="bg-[#D9D9D9] border border-black/20 p-8 max-w-sm w-full space-y-6">
