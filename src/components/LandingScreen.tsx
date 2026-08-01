@@ -34,11 +34,10 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onBegin, onLoginCl
 
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden" style={{ backgroundColor: PLATE }}>
-      <FallingPetals petalCount={55} tone="ink" />
-
-      <div className="relative z-10 flex flex-col items-center text-center px-6">
+      {/* Title artwork sits below the petals so they fall in front of it */}
+      <div className="relative z-[1] flex flex-col items-center text-center px-6">
         <img
-          src="/Component_1.png"
+          src="/landing-title.png"
           alt="Secrets"
           width={720}
           height={400}
@@ -47,30 +46,36 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onBegin, onLoginCl
           }`}
           draggable={false}
         />
+      </div>
 
-        <div className={`flex flex-col items-center gap-5 -mt-4 transition-all duration-[2000ms] delay-[900ms] ease-out ${
-          loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-        }`}>
-          <button
-            onClick={() => { hapticConfirm(); audioEngine.playButtonClick(); onBegin(); }}
-            className="group relative px-12 py-4 cursor-pointer overflow-hidden rounded-sm border border-black/60 bg-transparent transition-all duration-500 hover:bg-black hover:scale-[1.03]"
-          >
-            <span className="relative z-10 font-light text-xs md:text-sm uppercase tracking-[0.4em] text-black transition-colors duration-500 group-hover:text-white">
-              Begin Exploring
-            </span>
-            <div
-              className="absolute top-0 left-[-100%] w-[60%] h-full skew-x-[-20deg] group-hover:left-[140%] transition-all duration-[1200ms] ease-out pointer-events-none"
-              style={{ background: 'linear-gradient(90deg, transparent, rgba(0,0,0,0.07), transparent)' }}
-            />
-          </button>
+      {/* Petals in front of the artwork */}
+      <div className="absolute inset-0 z-[3] pointer-events-none">
+        <FallingPetals petalCount={55} tone="ink" />
+      </div>
 
-          <button
-            onClick={() => { hapticTap(); audioEngine.playButtonClick(); onLoginClick(); }}
-            className="text-[10px] md:text-xs uppercase tracking-[0.25em] cursor-pointer pb-1 text-black/45 border-b border-transparent transition-all duration-500 hover:tracking-[0.35em] hover:text-black hover:border-black/40"
-          >
-            Already have a key? Login
-          </button>
-        </div>
+      {/* Buttons above everything */}
+      <div className={`relative z-[4] flex flex-col items-center gap-5 mt-2 transition-all duration-[2000ms] delay-[900ms] ease-out ${
+        loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+      }`}>
+        <button
+          onClick={() => { hapticConfirm(); audioEngine.playButtonClick(); onBegin(); }}
+          className="group relative px-12 py-4 cursor-pointer overflow-hidden rounded-sm border border-black/60 bg-transparent transition-all duration-500 hover:bg-black hover:scale-[1.03]"
+        >
+          <span className="relative z-10 font-light text-xs md:text-sm uppercase tracking-[0.4em] text-black transition-colors duration-500 group-hover:text-white">
+            Begin Exploring
+          </span>
+          <div
+            className="absolute top-0 left-[-100%] w-[60%] h-full skew-x-[-20deg] group-hover:left-[140%] transition-all duration-[1200ms] ease-out pointer-events-none"
+            style={{ background: 'linear-gradient(90deg, transparent, rgba(0,0,0,0.07), transparent)' }}
+          />
+        </button>
+
+        <button
+          onClick={() => { hapticTap(); audioEngine.playButtonClick(); onLoginClick(); }}
+          className="text-[10px] md:text-xs uppercase tracking-[0.25em] cursor-pointer pb-1 text-black/45 border-b border-transparent transition-all duration-500 hover:tracking-[0.35em] hover:text-black hover:border-black/40"
+        >
+          Already have a key? Login
+        </button>
       </div>
     </div>
   );
