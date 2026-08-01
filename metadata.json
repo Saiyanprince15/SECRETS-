@@ -1,0 +1,6 @@
+{
+  "name": "Secrets - A Never Ending Art",
+  "description": "An ethereal digital museum and interactive narrative gallery exploring secrets, space, and cosmic art.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
