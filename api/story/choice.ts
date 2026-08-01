@@ -1,6 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { generateStoryContinuation } from '../_lib/narrative.js';
 
+/**
+ * Image generation takes 5-15s on top of the text call, which exceeds the
+ * default function timeout. Vercel reads this export at build time.
+ */
+export const config = {
+  maxDuration: 60,
+};
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
