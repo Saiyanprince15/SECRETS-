@@ -26,10 +26,20 @@ import { ProfileScreen } from './components/ProfileScreen';
 import { SecretModal } from './components/SecretModal';
 import { audioEngine } from './lib/audioEngine';
 
+/** Don't flash the transition screen if the API somehow returns instantly. */
+const MIN_TRANSITION_MS = 2200;
+
 export function App() {
   const [currentTab, setCurrentTab] = useState<AppTab>('landing');
   const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
   const [lastChoice, setLastChoice] = useState<string>('');
+  /**
+   * True while we're waiting on the network. The transition screen must NOT
+   * auto-dismiss on a timer in this case — image generation takes 10-20s, and
+   * a fixed timer would drop the user back on the old story node mid-flight.
+   */
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [storyError, setStoryError] = useState<string | null>(null);
 
   const [profile, setProfile] = useState<UserProfile>({
     email: '',
@@ -48,7 +58,6 @@ export function App() {
   const [selectedDiscovery, setSelectedDiscovery] =
     useState<SavedDiscovery | null>(null);
 
-  // Supabase session: restore on mount, then track changes
   useEffect(() => {
     const applyUser = (user: { id: string; email?: string }) => {
       ensureProfile(user.id, user.email ?? '');
@@ -103,8 +112,6 @@ export function App() {
     setCurrentTab('landing');
   };
 
-  /** Selecting a chapter must set the story node, or the hero image
-   *  stays on whatever the previous node was. */
   const handleSelectChapter = (chapter: Chapter) => {
     setStoryNode(chapter.story);
     setLastChoice(`Entering ${chapter.title}`);
@@ -112,7 +119,11 @@ export function App() {
 
   const handleSelectChoice = async (choiceText: string) => {
     setLastChoice(choiceText);
+    setStoryError(null);
+    setIsGenerating(true);
     setIsTransitioning(true);
+
+    const startedAt = Date.now();
 
     try {
       const res = await fetch('/api/story/choice', {
@@ -121,14 +132,17 @@ export function App() {
         body: JSON.stringify({
           choiceText,
           currentNarrative: storyNode.text,
-          history: history.map((h) => ({
+          history: history.slice(0, 6).map((h) => ({
             title: h.title,
             choice: h.description,
           })),
         }),
       });
 
-      if (!res.ok) throw new Error(`Story API returned ${res.status}`);
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(`Story API returned ${res.status}. ${detail.slice(0, 200)}`);
+      }
 
       const data = await res.json();
       const newStoryNode: StoryNode = {
@@ -161,12 +175,26 @@ export function App() {
         { id: `s-${stamp}`, ...entry, bookmarked: true },
         ...prev,
       ]);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to process story choice:', err);
+      setStoryError(
+        err?.message ?? 'The signal was lost before the revelation arrived.'
+      );
+    } finally {
+      // Only dismiss once the work is actually done.
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < MIN_TRANSITION_MS) {
+        await new Promise((r) => setTimeout(r, MIN_TRANSITION_MS - elapsed));
+      }
+      setIsGenerating(false);
+      setIsTransitioning(false);
+      audioEngine.playUnlockChime();
     }
   };
 
+  /** Only used by the timer-driven transitions (auth, season entry). */
   const handleFinishTransition = () => {
+    if (isGenerating) return; // network still in flight — ignore the timer
     setIsTransitioning(false);
     if (currentTab === 'auth') setCurrentTab('explore');
     audioEngine.playUnlockChime();
@@ -246,6 +274,8 @@ export function App() {
         <TransitionScreen
           chosenAction={lastChoice}
           onFinishTransition={handleFinishTransition}
+          autoProgress={!isGenerating}
+          waiting={isGenerating}
         />
       ) : currentTab === 'landing' ? (
         <LandingScreen
@@ -255,11 +285,26 @@ export function App() {
       ) : currentTab === 'auth' ? (
         <AuthScreen onLogin={handleLogin} />
       ) : currentTab === 'explore' ? (
-        <ExploreScreen
-          storyNode={storyNode}
-          onSelectChoice={handleSelectChoice}
-          onSelectChapter={handleSelectChapter}
-        />
+        <>
+          {storyError && (
+            <div className="fixed top-24 left-1/2 -translate-x-1/2 z-40 max-w-lg w-[90%] px-5 py-3 bg-[#1a1a1a] border border-[#FF4E00]/50 text-xs text-[#ff9a6b] rounded-lg shadow-xl flex items-start gap-3">
+              <span className="flex-1 leading-relaxed">{storyError}</span>
+              <button
+                onClick={() => setStoryError(null)}
+                className="text-[#ff9a6b]/60 hover:text-[#ff9a6b] cursor-pointer"
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          <ExploreScreen
+            storyNode={storyNode}
+            onSelectChoice={handleSelectChoice}
+            onSelectChapter={handleSelectChapter}
+            isLoading={isGenerating}
+          />
+        </>
       ) : currentTab === 'seasons' ? (
         <SeasonsScreen
           seasons={seasons}
