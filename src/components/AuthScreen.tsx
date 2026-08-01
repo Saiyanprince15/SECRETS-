@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { hapticTap, hapticConfirm, hapticToggle } from '../lib/haptics';
 
 interface AuthScreenProps {
   onLogin: (email: string) => void;
@@ -22,6 +23,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
     setError(null);
     setNotice(null);
     setBusy(true);
+    hapticConfirm();
 
     try {
       if (activeTab === 'signup') {
@@ -31,7 +33,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
         });
         if (signUpError) throw signUpError;
 
-        // If email confirmation is ON, there is no session yet.
         if (!data.session) {
           setNotice(
             'A confirmation link has been transmitted to your inbox. Confirm to receive your key.'
@@ -58,6 +59,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   const handleForgotKey = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    hapticConfirm();
     try {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
         forgotEmail.trim(),
@@ -103,6 +105,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               key={tab}
               type="button"
               onClick={() => {
+                hapticToggle();
                 setActiveTab(tab);
                 setError(null);
                 setNotice(null);
@@ -148,7 +151,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               </label>
               <button
                 type="button"
-                onClick={() => setForgotKeyModal(true)}
+                onClick={() => { hapticTap(); setForgotKeyModal(true); }}
                 className="text-[10px] uppercase tracking-widest text-[#d1c5b4]/50 hover:text-[#e9c176] transition-colors cursor-pointer"
               >
                 Lost Key?
@@ -181,7 +184,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
           )}
           {notice && (
             <div className="p-3 border border-[#e9c176]/40 bg-[#e9c176]/10 text-xs text-[#e9c176] leading-relaxed">
-              ✦ {notice}
+              \u2726 {notice}
             </div>
           )}
 
@@ -193,7 +196,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
             >
               <span>
                 {busy
-                  ? 'Opening the gate…'
+                  ? 'Opening the gate\u2026'
                   : activeTab === 'signin'
                   ? 'Begin'
                   : 'Initiate Registration'}
@@ -215,7 +218,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
             </p>
             {forgotSubmitted ? (
               <div className="p-4 border border-[#e9c176]/50 bg-[#e9c176]/10 text-xs text-[#e9c176] text-center">
-                ✦ Key restoration signal transmitted. Check your inbox.
+                \u2726 Key restoration signal transmitted. Check your inbox.
               </div>
             ) : (
               <form onSubmit={handleForgotKey} className="space-y-4">
@@ -230,7 +233,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 <div className="flex justify-end gap-3 pt-2">
                   <button
                     type="button"
-                    onClick={() => setForgotKeyModal(false)}
+                    onClick={() => { hapticTap(); setForgotKeyModal(false); }}
                     className="px-4 py-2 text-xs uppercase tracking-widest text-[#d1c5b4]/60 hover:text-white"
                   >
                     Cancel

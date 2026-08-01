@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AppTab } from '../types';
 import { AmbientSoundscapeControl } from './AmbientSoundscapeControl';
+import { hapticTap, hapticToggle } from '../lib/haptics';
 
 interface NavbarProps {
   currentTab: AppTab;
@@ -25,7 +26,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     <nav className="bg-transparent flex justify-between items-center w-full px-6 md:px-12 lg:px-20 py-4 md:py-6 z-50 fixed top-0 backdrop-blur-md bg-[#0D0D0D]/70 border-b border-white/10">
       <div className="flex items-center gap-6">
         <button
-          onClick={() => onSelectTab('explore')}
+          onClick={() => { hapticTap(); onSelectTab('explore'); }}
           className="font-serif text-2xl md:text-3xl text-[#E0D8D0] tracking-[0.2em] uppercase text-left cursor-pointer hover:text-[#FF4E00] transition-colors"
         >
           Secrets
@@ -40,7 +41,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {(['explore', 'seasons', 'profile'] as const).map((tab) => (
           <li key={tab}>
             <button
-              onClick={() => onSelectTab(tab)}
+              onClick={() => { hapticTap(); onSelectTab(tab); }}
               className={`transition-all duration-300 pb-1 cursor-pointer block capitalize ${
                 currentTab === tab
                   ? 'text-[#FF4E00] border-b-2 border-[#FF4E00] scale-105'
@@ -58,7 +59,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {onOpenSearch && (
           <button
-            onClick={onOpenSearch}
+            onClick={() => { hapticTap(); onOpenSearch(); }}
             aria-label="Search"
             className="text-[#a0a0a0] hover:text-[#FF4E00] transition-colors p-1 cursor-pointer"
           >
@@ -68,7 +69,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {onSignOut && (
           <button
-            onClick={onSignOut}
+            onClick={() => { hapticTap(); onSignOut(); }}
             className="hidden md:inline-block text-[10px] uppercase tracking-[0.25em] text-[#E0D8D0]/50 hover:text-[#FF4E00] transition-colors cursor-pointer border-b border-transparent hover:border-[#FF4E00]/40 pb-0.5"
           >
             Sign Out
@@ -76,7 +77,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         )}
 
         <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          onClick={() => { hapticToggle(); setMobileMenuOpen(!mobileMenuOpen); }}
           aria-label="Toggle Menu"
           className="text-[#E0D8D0] hover:text-[#FF4E00] transition-all p-1 cursor-pointer md:hidden"
         >
@@ -92,6 +93,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               key={tab}
               onClick={() => {
+                hapticTap();
                 onSelectTab(tab);
                 setMobileMenuOpen(false);
               }}
@@ -105,6 +107,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             onClick={() => {
+              hapticTap();
               setMobileMenuOpen(false);
               if (onSignOut) onSignOut();
               else onSelectTab('auth');
