@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   AppTab,
   UserProfile,
@@ -76,12 +76,19 @@ export function App() {
       }
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        applyUser(session.user);
-      } else {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
         setProfile((prev) => ({ ...prev, loggedIn: false, email: '' }));
         setCurrentTab('landing');
+      } else if (event === 'SIGNED_IN' && session?.user) {
+        applyUser(session.user);
+        setCurrentTab((tab) =>
+          tab === 'landing' || tab === 'auth' ? 'explore' : tab
+        );
+      } else if (session?.user) {
+        // TOKEN_REFRESHED, INITIAL_SESSION, etc. — update profile only,
+        // don't change navigation.
+        applyUser(session.user);
       }
     });
 
@@ -193,12 +200,12 @@ export function App() {
   };
 
   /** Only used by the timer-driven transitions (auth, season entry). */
-  const handleFinishTransition = () => {
+  const handleFinishTransition = useCallback(() => {
     if (isGenerating) return; // network still in flight — ignore the timer
     setIsTransitioning(false);
-    if (currentTab === 'auth') setCurrentTab('explore');
+    setCurrentTab((tab) => (tab === 'auth' ? 'explore' : tab));
     audioEngine.playUnlockChime();
-  };
+  }, [isGenerating]);
 
   const handleToggleBookmark = (id: string) => {
     setSavedDiscoveries((prev) =>
