@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { FallingPetals } from './FallingPetals';
 import { audioEngine } from '../lib/audioEngine';
+import { hapticConfirm, hapticTap } from '../lib/haptics';
 
 interface LandingScreenProps {
   onBegin: () => void;
@@ -20,11 +21,6 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
     return () => clearTimeout(timeout);
   }, []);
 
-  /**
-   * Browsers block AudioContext until the first user gesture (click/tap/key).
-   * We attach a one-shot listener to the whole page so the soundscape kicks in
-   * the instant the user interacts — before they even reach "Begin Exploring".
-   */
   useEffect(() => {
     const startAudio = () => {
       if (!audioEngine.getIsPlaying()) {
@@ -71,7 +67,7 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
           }`}
         >
           <button
-            onClick={onBegin}
+            onClick={() => { hapticConfirm(); onBegin(); }}
             className="group relative px-12 py-4 cursor-pointer overflow-hidden rounded-sm border border-black/60 bg-transparent transition-all duration-500 hover:bg-black hover:scale-[1.03]"
           >
             <span className="relative z-10 font-light text-xs md:text-sm uppercase tracking-[0.4em] text-black transition-colors duration-500 group-hover:text-white">
@@ -87,7 +83,7 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
           </button>
 
           <button
-            onClick={onLoginClick}
+            onClick={() => { hapticTap(); onLoginClick(); }}
             className="text-[10px] md:text-xs uppercase tracking-[0.25em] cursor-pointer pb-1 text-black/45 border-b border-transparent transition-all duration-500 hover:tracking-[0.35em] hover:text-black hover:border-black/40"
           >
             Already have a key? Login
