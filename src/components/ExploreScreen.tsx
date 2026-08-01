@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StoryNode } from '../types';
 import { CosmicDust } from './CosmicDust';
 import { CHAPTERS, Chapter, FALLBACK_HERO } from '../chapters';
+import { hapticTap, hapticConfirm, hapticImpact } from '../lib/haptics';
 
 interface ExploreScreenProps {
   storyNode: StoryNode;
@@ -22,8 +23,6 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
   const [exploreView, setExploreView] = useState<'chapters' | 'story'>('chapters');
   const [heroSrc, setHeroSrc] = useState(storyNode.imageUrl);
 
-  // Keep the hero in sync when the story node changes, and recover from
-  // broken/expired image URLs instead of showing a blank frame.
   useEffect(() => {
     setHeroSrc(storyNode.imageUrl || FALLBACK_HERO);
   }, [storyNode.imageUrl]);
@@ -42,6 +41,7 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
   const handleCustomSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (customPrompt.trim()) {
+      hapticConfirm();
       onSelectChoice(customPrompt.trim());
       setCustomPrompt('');
       setShowCustomInput(false);
@@ -68,6 +68,7 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
                 key={chapter.id}
                 type="button"
                 onClick={() => {
+                  hapticImpact();
                   onSelectChapter(chapter);
                   setExploreView('story');
                 }}
@@ -104,7 +105,6 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
     <main className="flex-grow relative pt-20 overflow-hidden">
       <CosmicDust particleCount={70} />
 
-      {/* Hero artwork: fixed 16:9, wide, story flows beneath it */}
       <section className="relative w-full px-4 md:px-12 pt-6">
         <div className="relative w-full max-w-[1600px] mx-auto aspect-[16/9] overflow-hidden rounded-2xl bg-[#0e0e0e] border border-white/10">
           <img
@@ -120,7 +120,6 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
             }}
           />
 
-          {/* Light bottom fade only - no longer swallowing the frame */}
           <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#131313]/70 to-transparent pointer-events-none" />
 
           <div className="absolute top-6 left-6 md:top-8 md:left-8 bg-[#0D0D0D]/80 backdrop-blur-md border border-[#FF4E00]/40 px-5 py-2 rounded-full text-[10px] uppercase tracking-[0.3em] font-semibold text-[#FF4E00] flex items-center gap-2">
@@ -130,7 +129,7 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
 
           <button
             type="button"
-            onClick={() => setExploreView('chapters')}
+            onClick={() => { hapticTap(); setExploreView('chapters'); }}
             className="absolute top-6 right-6 md:top-8 md:right-8 bg-[#0D0D0D]/80 backdrop-blur-md border border-white/15 px-4 py-2 rounded-full text-[10px] uppercase tracking-[0.25em] text-[#E0D8D0]/80 hover:text-[#FF4E00] hover:border-[#FF4E00]/40 transition-colors cursor-pointer"
           >
             ← Archives
@@ -138,7 +137,6 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
         </div>
       </section>
 
-      {/* Narrative continues below the image */}
       <section className="px-6 md:px-20 py-16 md:py-20 relative z-10 fade-in-rise delay-300">
         <div className="max-w-4xl mx-auto text-center mb-20 md:mb-24">
           <h2 className="font-serif text-3xl md:text-5xl text-[#E0D8D0] italic font-normal leading-relaxed text-balance opacity-95 mb-6">
@@ -158,7 +156,7 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
               <button
                 key={`${choice}-${idx}`}
                 disabled={isLoading}
-                onClick={() => onSelectChoice(choice)}
+                onClick={() => { hapticConfirm(); onSelectChoice(choice); }}
                 className="group relative p-8 h-36 md:h-44 border border-white/10 hover:border-[#FF4E00] transition-all duration-500 flex flex-col justify-between text-left overflow-hidden bg-[#161920]/70 backdrop-blur-md cursor-pointer disabled:opacity-50 rounded-xl"
               >
                 <div className="absolute inset-0 bg-[#FF4E00]/0 group-hover:bg-[#FF4E00]/5 transition-colors duration-500" />
@@ -177,7 +175,7 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
             {!showCustomInput ? (
               <button
                 type="button"
-                onClick={() => setShowCustomInput(true)}
+                onClick={() => { hapticTap(); setShowCustomInput(true); }}
                 className="text-[11px] uppercase tracking-[0.3em] text-[#FF4E00] hover:text-[#ff7433] border-b border-[#FF4E00]/40 pb-1 transition-colors cursor-pointer inline-flex items-center gap-2"
               >
                 ✦ Speak a custom intention to the soundscape...
@@ -203,7 +201,7 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowCustomInput(false)}
+                  onClick={() => { hapticTap(); setShowCustomInput(false); }}
                   className="px-3 py-2 text-xs text-[#E0D8D0]/50 hover:text-white"
                 >
                   ✕
