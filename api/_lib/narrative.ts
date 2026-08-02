@@ -17,17 +17,24 @@ export function getGenAiClient(): GoogleGenAI | null {
   return client;
 }
 
-/** Text model — narrative, choices, exhibition copy. Gemini has a free tier for text. */
-export const MODEL = 'gemini-3.6-flash';
+/**
+ * Text models, tried in order. Gemini returns 503 "high demand" under load,
+ * so a single overloaded model must not take the whole endpoint down.
+ * Override with TEXT_MODELS as a comma-separated list.
+ */
+export const TEXT_MODELS = (
+  process.env.TEXT_MODELS || 'gemini-3.6-flash,gemini-2.5-flash'
+)
+  .split(',')
+  .map((m) => m.trim())
+  .filter(Boolean);
+
+/** Kept for backwards compatibility with anything importing MODEL. */
+export const MODEL = TEXT_MODELS[0];
 
 /**
  * Image generation runs on Hugging Face Inference Providers, not Gemini —
  * Gemini's image models have no free tier.
- *
- * FLUX.1-schnell is a 4-step distilled model, so it's fast and cheap. Note
- * that HF Inference Providers is free-tier-limited, not unlimited: free
- * accounts get a monthly credit allowance, after which calls start failing
- * and we fall back to the stock images below.
  */
 export const IMAGE_MODEL =
   process.env.IMAGE_MODEL || 'black-forest-labs/FLUX.1-schnell';
@@ -79,12 +86,63 @@ export function randomDepth() {
   return `Depth ${DEPTHS[Math.floor(Math.random() * DEPTHS.length)]}`;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** 503/429/500 and UNAVAILABLE/RESOURCE_EXHAUSTED are worth another attempt. */
+function isRetryable(err: any): boolean {
+  const status = err?.status ?? err?.code;
+  if (status === 503 || status === 429 || status === 500) return true;
+  const text = String(err?.message ?? err);
+  return (
+    text.includes('503') ||
+    text.includes('429') ||
+    text.includes('UNAVAILABLE') ||
+    text.includes('RESOURCE_EXHAUSTED') ||
+    text.includes('overloaded') ||
+    text.includes('high demand')
+  );
+}
+
+/**
+ * Run a Gemini call across TEXT_MODELS with exponential backoff.
+ * Throws only if every model fails on every attempt.
+ */
+async function withModelFallback<T>(
+  run: (model: string) => Promise<T>,
+  attemptsPerModel = 3
+): Promise<T> {
+  let lastErr: any;
+
+  for (const model of TEXT_MODELS) {
+    for (let attempt = 0; attempt < attemptsPerModel; attempt++) {
+      try {
+        return await run(model);
+      } catch (err: any) {
+        lastErr = err;
+        if (!isRetryable(err)) {
+          console.error(`[${model}] non-retryable:`, err?.message ?? err);
+          break; // try the next model rather than hammering this one
+        }
+        const backoff = 600 * Math.pow(2, attempt); // 600ms, 1.2s, 2.4s
+        console.warn(
+          `[${model}] attempt ${attempt + 1} failed (${
+            err?.message ?? err
+          }) — retrying in ${backoff}ms`
+        );
+        await sleep(backoff);
+      }
+    }
+    console.warn(`[${model}] exhausted — falling through to next model.`);
+  }
+
+  throw lastErr ?? new Error('All text models failed.');
+}
+
 /**
  * Generate original artwork for a story node via FLUX.1-schnell on HF.
  *
- * Returns a base64 data URL. Returns null on any failure so callers can fall
- * back to FRAGMENT_IMAGES — a rate limit or cold provider never breaks the
- * story flow.
+ * Returns a base64 data URL, or null on any failure so callers can fall back
+ * to FRAGMENT_IMAGES — a rate limit or cold provider never breaks the story.
  */
 export async function generateFragmentImage(
   title: string,
@@ -127,6 +185,39 @@ export async function generateFragmentImage(
   }
 }
 
+/**
+ * Locally-composed continuation used when every text model is unavailable.
+ * Varies with the choice so a degraded run still reads as a story rather
+ * than the same paragraph every time.
+ */
+const DEGRADED_OPENERS = [
+  'The instruments settle, and for a moment the vessel holds its breath.',
+  'Something shifts in the dark beyond the hull, patient and unhurried.',
+  'A low resonance moves through the deck plating, older than the ship.',
+  'The light changes without a source, as though the room remembered a sun.',
+];
+
+const DEGRADED_TITLES = [
+  'A Pause in the Signal',
+  'The Long Quiet',
+  'What the Dark Retains',
+  'An Unmarked Threshold',
+];
+
+function degradedContinuation(choiceText: string) {
+  const i = Math.floor(Math.random() * DEGRADED_OPENERS.length);
+  return {
+    revelationTitle: DEGRADED_TITLES[i],
+    revelationBody: `${DEGRADED_OPENERS[i]} You chose to ${choiceText.toLowerCase()}, and the exhibition answers slowly, withholding more than it gives.`,
+    nextChoices: [
+      'Wait for the resonance to return',
+      'Trace the signal to its source',
+      'Record what you witnessed',
+      'Withdraw to the observation deck',
+    ],
+  };
+}
+
 export interface StoryChoiceBody {
   choiceText?: string;
   currentNarrative?: string;
@@ -134,38 +225,21 @@ export interface StoryChoiceBody {
 }
 
 export async function generateStoryContinuation(body: StoryChoiceBody) {
-  const { choiceText, currentNarrative, history = [] } = body;
+  const { choiceText = 'continue', currentNarrative, history = [] } = body;
   const ai = getGenAiClient();
 
-  if (!ai) {
-    const fallbackImage = await generateFragmentImage(
-      'The Celestial Anomaly',
-      'Ancient controls hum with a deep resonant frequency on an abandoned bridge.'
-    );
-    return {
-      revelationTitle: 'The Celestial Anomaly',
-      revelationBody: `As you chose to "${choiceText}", the ancient controls hum with a deep resonant frequency. A hidden hologram illuminates the dark bridge, revealing forgotten stellar cartography from the Lost Era.`,
-      nextChoices: [
-        'Decode the Celestial Coordinates',
-        "Interrogate the Ship's AI Log",
-        'Activate the Sub-light Thrusters',
-        'Return to the Observation Deck',
-      ],
-      fragmentImage: fallbackImage ?? randomFragment(),
-      imageGenerated: fallbackImage !== null,
-      cycle: randomCycle(),
-      depth: randomDepth(),
-    };
-  }
+  let data: any = null;
+  let degraded = false;
 
-  const prompt = `
+  if (ai) {
+    const prompt = `
 You are the silent, atmospheric curator and narrator of "Secrets — A Never Ending Art", an immersive cosmic mystery art exhibition.
 The explorer is on a silent spacecraft or digital museum gallery.
 
 Current Narrative: "${
-    currentNarrative ||
-    'The bridge of the abandoned spacecraft is silent. A weary captain watches distant stars while ancient machinery hums softly beneath the floor.'
-  }"
+      currentNarrative ||
+      'The bridge of the abandoned spacecraft is silent. A weary captain watches distant stars while ancient machinery hums softly beneath the floor.'
+    }"
 Explorer's Action/Choice: "${choiceText}"
 Previous steps: ${JSON.stringify(history)}
 
@@ -178,26 +252,39 @@ Output JSON strictly conforming to this structure:
 }
 `;
 
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents: prompt,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          revelationTitle: { type: Type.STRING },
-          revelationBody: { type: Type.STRING },
-          nextChoices: { type: Type.ARRAY, items: { type: Type.STRING } },
-        },
-        required: ['revelationTitle', 'revelationBody', 'nextChoices'],
-      },
-    },
-  });
+    try {
+      const response = await withModelFallback((model) =>
+        ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                revelationTitle: { type: Type.STRING },
+                revelationBody: { type: Type.STRING },
+                nextChoices: { type: Type.ARRAY, items: { type: Type.STRING } },
+              },
+              required: ['revelationTitle', 'revelationBody', 'nextChoices'],
+            },
+          },
+        })
+      );
+      data = JSON.parse(response.text || '{}');
+    } catch (err: any) {
+      console.error('All text models failed:', err?.message ?? err);
+      degraded = true;
+    }
+  } else {
+    degraded = true;
+  }
 
-  const data = JSON.parse(response.text || '{}');
+  if (!data || !data.revelationTitle) {
+    data = degradedContinuation(choiceText);
+    degraded = true;
+  }
 
-  // Artwork is generated FROM the narrative, so this runs after the text call.
   const generated = await generateFragmentImage(
     data.revelationTitle ?? '',
     data.revelationBody ?? ''
@@ -207,6 +294,7 @@ Output JSON strictly conforming to this structure:
     ...data,
     fragmentImage: generated ?? randomFragment(),
     imageGenerated: generated !== null,
+    textDegraded: degraded,
     cycle: randomCycle(),
     depth: randomDepth(),
   };
@@ -214,25 +302,15 @@ Output JSON strictly conforming to this structure:
 
 export async function generateExhibition(themePrompt?: string) {
   const ai = getGenAiClient();
+  const theme = themePrompt || 'Quantum memories in deep space';
 
-  if (!ai) {
-    const fallbackImage = await generateFragmentImage(
-      'Season V: Crimson Echoes',
-      'A meditation on memory and lost constellations.'
-    );
-    return {
-      title: 'Season V: Crimson Echoes',
-      tagline: 'A meditation on memory and lost constellations.',
-      description:
-        'Explore the remnants of a silent spacefaring civilization through procedural artifacts and forgotten acoustics.',
-      bgImage: fallbackImage ?? randomFragment(),
-      imageGenerated: fallbackImage !== null,
-    };
-  }
+  let data: any = null;
+  let degraded = false;
 
-  const prompt = `
+  if (ai) {
+    const prompt = `
 Generate a poetic exhibition theme for a digital art museum called "Secrets".
-User requested topic/feeling: "${themePrompt || 'Quantum memories in deep space'}"
+User requested topic/feeling: "${theme}"
 
 Output JSON:
 {
@@ -241,25 +319,43 @@ Output JSON:
   "description": "2 sentence gallery description describing the artifacts and emotional tone"
 }
 `;
+    try {
+      const response = await withModelFallback((model) =>
+        ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                tagline: { type: Type.STRING },
+                description: { type: Type.STRING },
+              },
+              required: ['title', 'tagline', 'description'],
+            },
+          },
+        })
+      );
+      data = JSON.parse(response.text || '{}');
+    } catch (err: any) {
+      console.error('All text models failed:', err?.message ?? err);
+      degraded = true;
+    }
+  } else {
+    degraded = true;
+  }
 
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents: prompt,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          title: { type: Type.STRING },
-          tagline: { type: Type.STRING },
-          description: { type: Type.STRING },
-        },
-        required: ['title', 'tagline', 'description'],
-      },
-    },
-  });
-
-  const data = JSON.parse(response.text || '{}');
+  if (!data || !data.title) {
+    data = {
+      title: `Season: ${theme}`,
+      tagline: 'An exhibition assembled in the quiet.',
+      description:
+        'The curator is unreachable, so this gallery was assembled from what remained in the archive. Its artifacts are provisional.',
+    };
+    degraded = true;
+  }
 
   const generated = await generateFragmentImage(
     data.title ?? '',
@@ -270,5 +366,6 @@ Output JSON:
     ...data,
     bgImage: generated ?? randomFragment(),
     imageGenerated: generated !== null,
+    textDegraded: degraded,
   };
 }
