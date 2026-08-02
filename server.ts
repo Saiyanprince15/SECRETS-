@@ -15,6 +15,7 @@ import {
 } from "./api/_lib/narrative.js";
 
 dotenv.config();
+dotenv.config({ path: '.env.local', override: true });
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3000);
