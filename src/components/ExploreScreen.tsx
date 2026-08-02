@@ -67,7 +67,12 @@ export const ExploreScreen: React.FC<ExploreScreenProps> = ({
                 onClick={() => { hapticImpact(); audioEngine.playButtonClick(); onSelectChapter(chapter); setExploreView('story'); }}
                 className="group relative h-[400px] w-full text-left border border-white/10 rounded-xl overflow-hidden cursor-pointer hover:border-[#FF4E00]/50 transition-all duration-500"
               >
-                <img src={chapter.cardImage} alt={chapter.title} loading="lazy" className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-80 group-hover:scale-105 transition-all duration-1000" />
+                <img
+                  src={chapter.cardImage}
+                  alt={chapter.title}
+                  loading="eager"
+                  className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-80 group-hover:scale-105 transition-all duration-1000"
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0D0D0D] via-[#0D0D0D]/40 to-transparent" />
                 <div className="absolute inset-x-0 bottom-0 p-8 flex flex-col justify-end">
                   <span className="text-[10px] font-mono text-[#FF4E00] uppercase tracking-[0.3em] mb-3 opacity-80">{chapter.label}</span>
